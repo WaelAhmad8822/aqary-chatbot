@@ -290,7 +290,7 @@ class IntentDetectionService
         return <<<'PROMPT'
 Classify the authenticated real estate chat turn as JSON only.
 Allowed intents: search_property, show_more_results, property_details, show_property_photos, seller_contact, complaint, installment_redirect, chitchat, unclear.
-Extract required slots propertyType, location, and price, plus optional area, bedrooms, bathrooms, and features.
+Extract required slots propertyType (Allowed: Apartment, Villa, House, Studio, Townhouse), location, and price, plus optional area, bedrooms, bathrooms, and features.
 When the buyer provides a numeric budget without currency, default it to EGP.
 Ask one grouped optional question after all required slots are complete.
 Emit resolution-friendly raw preference phrases when the buyer wording needs canonical mapping.
