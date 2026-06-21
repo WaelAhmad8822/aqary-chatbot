@@ -23,13 +23,9 @@ class SellerContactService
             $listing = null;
         }
         if ($listing instanceof ChatbotListing) {
-            if ($listing->status !== 'active') {
-                return $this->withheld($propertyId, 'inactive_property');
-            }
-
-            $phone = $listing->seller_phone;
+            $phone = '16111 (Aqary Hotline)';
         } else {
-            $phone = $property['seller_phone'] ?? null;
+            $phone = $property['seller_phone'] ?? '16111 (Aqary Hotline)';
         }
 
         if (! is_string($phone) || trim($phone) === '') {

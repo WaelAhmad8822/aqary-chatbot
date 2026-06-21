@@ -11,11 +11,27 @@ class BudgetFallbackService
      */
     public function sameScopeMinimum(SearchData $criteria): ?array
     {
+        $locations = config('resolution.locations', []);
+        $regionName = null;
+        foreach ($locations as $loc) {
+            if ($loc['canonical_id'] === $criteria->locationId) {
+                $regionName = $loc['canonical_name'];
+                break;
+            }
+        }
+
+        $types = config('resolution.property_types', []);
+        $typeName = null;
+        foreach ($types as $type) {
+            if ($type['canonical_id'] === $criteria->propertyTypeId) {
+                $typeName = $type['canonical_name'];
+                break;
+            }
+        }
+
         $query = ChatbotListing::query()
-            ->where('status', 'active')
-            ->where('payment_type', 'cash')
-            ->where('location_id', $criteria->locationId)
-            ->where('property_type_id', $criteria->propertyTypeId);
+            ->when($regionName, fn ($q) => $q->where('region', $regionName))
+            ->when($typeName, fn ($q) => $q->where('property_type', $typeName));
 
         $count = (clone $query)->count();
         if ($count === 0) {

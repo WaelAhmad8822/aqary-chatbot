@@ -75,11 +75,11 @@ class PropertyReferenceResolver
         }
 
         try {
-            $listing = ChatbotListing::query()->with('features')->find((int) $id);
+            $listing = ChatbotListing::query()->find((int) $id);
         } catch (Throwable) {
             return null;
         }
-        if (! $listing instanceof ChatbotListing || $listing->status !== 'active') {
+        if (! $listing instanceof ChatbotListing) {
             return null;
         }
 
@@ -95,11 +95,11 @@ class PropertyReferenceResolver
             return $state;
         }
 
-        $listing = ChatbotListing::query()->with('features')->find($propertyId);
+        $listing = ChatbotListing::query()->find($propertyId);
         $state['context_property_id'] = $propertyId;
         $state['property_page_context'] = [
             'context_property_id' => $propertyId,
-            'status' => $listing instanceof ChatbotListing && $listing->status === 'active' ? 'valid' : 'invalid',
+            'status' => $listing instanceof ChatbotListing ? 'valid' : 'invalid',
             'applies_to_turn' => true,
             'validated_at' => date(DATE_ATOM),
             'property' => $listing instanceof ChatbotListing ? $this->listingToReference($listing) : null,
@@ -175,21 +175,25 @@ class PropertyReferenceResolver
      */
     private function listingToReference(ChatbotListing $listing): array
     {
+        $features = is_array($listing->features) ? $listing->features : json_decode($listing->features ?? '[]', true);
+        $images = is_array($listing->images) ? $listing->images : json_decode($listing->images ?? '[]', true);
+        $cover = !empty($images) ? '/storage/' . $images[0] : null;
+
         return [
             'id' => $listing->id,
             'position' => 1,
             'rank_position' => null,
             'title' => $listing->title,
-            'url' => $listing->url,
+            'url' => 'http://localhost/properties/' . $listing->id,
             'price' => $listing->price,
-            'area' => $listing->area,
+            'area' => $listing->area_sqm,
             'bedrooms' => $listing->bedrooms,
             'bathrooms' => $listing->bathrooms,
-            'furnished_status' => $listing->furnished_status,
-            'location' => $listing->location_name,
-            'cover_image_url' => $listing->cover_image_url,
-            'has_cover_image' => ! empty($listing->cover_image_url),
-            'matched_features' => $listing->features->pluck('name')->values()->all(),
+            'furnished_status' => $listing->is_furnished ? 'Furnished' : 'Unfurnished',
+            'location' => $listing->region,
+            'cover_image_url' => $cover,
+            'has_cover_image' => !empty($cover),
+            'matched_features' => $features,
         ];
     }
 }
