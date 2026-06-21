@@ -190,13 +190,7 @@ class IntentDetectionService
             return $this->trans('messages.property_reference.unresolved', [], $locale);
         }
 
-        if ($nlu['intent'] === 'chitchat') {
-            return $this->trans('messages.chitchat', [], $locale);
-        }
 
-        if ($nlu['intent'] === 'unclear') {
-            return $this->trans('messages.unclear', [], $locale);
-        }
 
         $searchStatus = $state['search']['status'] ?? null;
         if ($searchStatus === 'results') {
@@ -229,6 +223,14 @@ class IntentDetectionService
 
         if ($state['needsCheckIn'] ?? false) {
             return $this->trans('messages.saved_preferences_checkin', [], $locale);
+        }
+
+        if ($nlu['intent'] === 'chitchat') {
+            return $this->trans('messages.chitchat', [], $locale);
+        }
+
+        if ($nlu['intent'] === 'unclear') {
+            return $this->trans('messages.unclear', [], $locale);
         }
 
         return $this->trans('messages.saved_preferences', [], $locale);
@@ -290,6 +292,7 @@ class IntentDetectionService
         return <<<'PROMPT'
 Classify the authenticated real estate chat turn as JSON only.
 Allowed intents: search_property, show_more_results, property_details, show_property_photos, seller_contact, complaint, installment_redirect, chitchat, unclear.
+For phrases like "ask about a shown one" or "one already shown", ALWAYS classify as property_details.
 Extract required slots propertyType (Allowed: Apartment, Villa, House, Studio, Townhouse), location, and price, plus optional area, bedrooms, bathrooms, and features.
 When the buyer provides a numeric budget without currency, default it to EGP.
 Ask one grouped optional question after all required slots are complete.
