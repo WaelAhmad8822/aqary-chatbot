@@ -191,10 +191,16 @@ class IntentDetectionService
         }
 
         if ($nlu['intent'] === 'chitchat') {
+            if ($this->hasSearchResults($state)) {
+                return $this->searchResultReply($state);
+            }
             return $this->trans('messages.chitchat', [], $locale);
         }
 
         if ($nlu['intent'] === 'unclear') {
+            if ($this->hasSearchResults($state)) {
+                return $this->searchResultReply($state);
+            }
             return $this->trans('messages.unclear', [], $locale);
         }
 
@@ -232,6 +238,33 @@ class IntentDetectionService
         }
 
         return $this->trans('messages.saved_preferences', [], $locale);
+    }
+
+    private function hasSearchResults(array $state): bool
+    {
+        return in_array($state['search']['status'] ?? null, ['results', 'budget_fallback', 'no_results', 'exhausted'], true);
+    }
+
+    private function searchResultReply(array $state): string
+    {
+        $locale = $this->detectLanguage($state);
+        $status = $state['search']['status'] ?? null;
+
+        return match ($status) {
+            'results' => (function () use ($state, $locale): string {
+                $count = count($state['search']['result_items'] ?? $state['shown_properties'] ?? []);
+                $more = ! empty($state['search']['has_more']) ? $this->trans('messages.search.results_more', [], $locale) : '';
+                return $this->trans('messages.search.results', ['count' => $count, 'more' => $more], $locale);
+            })(),
+            'budget_fallback' => (function () use ($state, $locale): string {
+                $minimum = $state['search']['min_price_fallback'] ?? null;
+                $minText = $minimum !== null ? $this->trans('messages.search.budget_fallback_minimum', ['minimum' => $minimum], $locale) : '';
+                return $this->trans('messages.search.budget_fallback', ['minimum' => $minText], $locale);
+            })(),
+            'no_results' => $this->trans('messages.search.no_results', [], $locale),
+            'exhausted' => $this->trans('messages.search.exhausted', [], $locale),
+            default => $this->trans('messages.search.no_results', [], $locale),
+        };
     }
 
     private function detectLanguage(array $state): string
