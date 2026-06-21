@@ -130,9 +130,12 @@ class ChatController extends Controller
         }
 
         $searchOutcome = ['state' => $state, 'properties' => [], 'has_more' => false, 'min_price_fallback' => null, 'search_id' => null, 'event' => null];
-        $shouldSearch = in_array($nlu['intent'] ?? null, ['search_property', 'show_more_results'], true)
+        $intentIsSearch = in_array($nlu['intent'] ?? null, ['search_property', 'show_more_results', 'unclear'], true);
+        $intentNonSearch = in_array($nlu['intent'] ?? null, ['complaint', 'installment_redirect', 'seller_contact', 'property_details', 'show_property_photos'], true);
+        $shouldSearch = $intentIsSearch
             || (bool) ($nlu['new_search_requested'] ?? false)
-            || (bool) (($nlu['search']['refinement_requested'] ?? false));
+            || (bool) (($nlu['search']['refinement_requested'] ?? false))
+            || (! $intentNonSearch && ($state['slot_collection']['search_ready'] ?? false) === true);
 
         if (! $complaintActive && ($state['slot_collection']['search_ready'] ?? false) === true && $shouldSearch) {
             $searchOutcome = $this->search->search($state, $nlu);

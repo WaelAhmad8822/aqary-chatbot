@@ -17,14 +17,18 @@ class OpenRouterService
             'response_format' => ['type' => 'json_object'],
         ];
 
-        for ($attempt = 1; $attempt <= 1; $attempt++) {
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
             try {
                 $response = Http::withToken((string) env('OPENROUTER_API_KEY'))
-                    ->timeout(25)
+                    ->timeout(30)
                     ->acceptJson()
+                    ->retry(2, 1000)
                     ->post($endpoint, $body);
 
                 if (! $response->successful()) {
+                    if ($attempt < 3) {
+                        usleep(500000);
+                    }
                     continue;
                 }
 
@@ -36,6 +40,9 @@ class OpenRouterService
                 }
             } catch (Throwable $exception) {
                 report($exception);
+                if ($attempt < 3) {
+                    usleep(500000);
+                }
             }
         }
 
@@ -46,7 +53,7 @@ class OpenRouterService
                 'slots' => [],
                 'flags' => [],
             ],
-            'attempts' => 2,
+            'attempts' => 3,
         ];
     }
 
