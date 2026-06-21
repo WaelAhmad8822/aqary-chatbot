@@ -1,0 +1,25 @@
+{
+  "name": "recommendation-microservice",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "echo 'No build step required'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/omareldesouky16/aqary-chatbot.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/omareldesouky16/aqary-chatbot/issues"
+  },
+  "homepage": "https://github.com/omareldesouky16/aqary-chatbot#readme"
+}
