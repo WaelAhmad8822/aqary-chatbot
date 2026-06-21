@@ -70,6 +70,9 @@ class SlotExtractor
             }
 
             if (array_key_exists($slot, $state['slots'])) {
+                if ($slot === 'price') {
+                    $value = $this->normalizePrice($value, $nlu['raw_message'] ?? '');
+                }
                 $state['slots'][$slot] = $value;
             }
         }
@@ -89,10 +92,47 @@ class SlotExtractor
             $state['optional_collection_status'] = (string) $nlu['optional_collection_status'];
         }
 
+        // Server-side automatic fallback: if the bot already asked about optional
+        // preferences and the LLM didn't set optional_collection_status, auto-advance
+        // so the conversation progresses to search instead of getting stuck forever.
+        $currentStatus = $state['optional_collection_status'] ?? 'not_asked';
+        $rawMessage = $nlu['raw_message'] ?? '';
+
+        if ($currentStatus === 'asked' && ! isset($nlu['optional_collection_status'])) {
+            if ($nlu['intent'] !== 'system_error') {
+                if ($this->isDeclineResponse($rawMessage)) {
+                    $state['optional_collection_status'] = 'declined';
+                } else {
+                    $state['optional_collection_status'] = 'answered';
+                }
+            }
+        }
+
+        // Also auto-answer on first turn if all required slots filled and user
+        // is clearly providing optional data (extracted optional slots exist).
+        if ($currentStatus === 'not_asked' && ! isset($nlu['optional_collection_status']) && $nlu['intent'] !== 'system_error') {
+            $optionalSlots = ['area', 'bedrooms', 'bathrooms', 'features'];
+            $hasOptional = false;
+            foreach ($optionalSlots as $s) {
+                $val = $nlu['slots'][$s] ?? null;
+                if ($val !== null && $val !== '' && $val !== []) {
+                    $hasOptional = true;
+                    break;
+                }
+            }
+            if ($hasOptional) {
+                $state['optional_collection_status'] = 'answered';
+            }
+        }
+
         $state['search_ready'] = false;
 
-        if (! empty($nlu['language'])) {
-            $state['language'] = $nlu['language'];
+        $detectedLanguage = $nlu['language'] ?? null;
+        if ($detectedLanguage === null || $detectedLanguage === '') {
+            $detectedLanguage = $this->detectLanguageFromMessage($nlu['raw_message'] ?? '');
+        }
+        if (! empty($detectedLanguage)) {
+            $state['language'] = $detectedLanguage;
         }
 
         return $state;
@@ -186,6 +226,125 @@ class SlotExtractor
         $reset['search']['status'] = 'not_ready';
 
         return $reset;
+    }
+
+    private function normalizePrice(mixed $price, string $rawMessage = ''): int|string
+    {
+        // If price is a small number (< 1000) but the message contains
+        // "million"/"thousand"/"آلاف"/"مليون" etc., multiply accordingly.
+        $messageHasUnit = (bool) preg_match('/\b(million|m|billion|b|thousand|k|آلاف|مليون|مليار|الف)\b/i', $rawMessage);
+
+        if (is_numeric($price)) {
+            $num = (int) $price;
+            if ($num < 1000 && $messageHasUnit && $num > 0) {
+                if (preg_match('/\b(million|m|مليون)\b/i', $rawMessage)) {
+                    return $num * 1000000;
+                }
+                if (preg_match('/\b(billion|b|مليار)\b/i', $rawMessage)) {
+                    return $num * 1000000000;
+                }
+                if (preg_match('/\b(thousand|k|آلاف|الف)\b/i', $rawMessage)) {
+                    return $num * 1000;
+                }
+            }
+            return $num;
+        }
+
+        $raw = trim((string) $price);
+
+        // Handle Arabic-Indic digits (٠-٩) before any parsing
+        $arabicDigits = ['٠', '١', '٢', '٣', '٤', '٥', '٦', '٧', '٨', '٩'];
+        $latinDigits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+        $raw = str_replace($arabicDigits, $latinDigits, $raw);
+
+        // Check for "X million/thousand" pattern BEFORE stripping units
+        if (preg_match('/^([0-9]+(?:\.[0-9]+)?)\s*(million|m|billion|b|thousand|k|آلاف|مليون|مليار|الف)\b/i', $raw, $m)) {
+            $num = (float) $m[1];
+            $unit = strtolower($m[2]);
+            return match ($unit) {
+                'billion', 'b', 'مليار' => (int) ($num * 1000000000),
+                'million', 'm', 'مليون' => (int) ($num * 1000000),
+                'thousand', 'k', 'آلاف', 'الف' => (int) ($num * 1000),
+                default => (int) $num,
+            };
+        }
+
+        // Check with any currency suffix attached (e.g. "3 million EGP")
+        $clean = preg_replace('/\b(egp|usd|eur|gbp|sar|aed)\b/i', '', $raw);
+        $clean = trim($clean);
+        if (preg_match('/^([0-9]+(?:\.[0-9]+)?)\s*(million|m|billion|b|thousand|k|آلاف|مليون|مليار|الف)\b/i', $clean, $m)) {
+            $num = (float) $m[1];
+            $unit = strtolower($m[2]);
+            return match ($unit) {
+                'billion', 'b', 'مليار' => (int) ($num * 1000000000),
+                'million', 'm', 'مليون' => (int) ($num * 1000000),
+                'thousand', 'k', 'آلاف', 'الف' => (int) ($num * 1000),
+                default => (int) $num,
+            };
+        }
+
+        // Strip known currency suffixes and non-numeric chars
+        $clean = preg_replace('/\b(egp|usd|eur|gbp|sar|aed)\b/i', '', $clean);
+        $clean = preg_replace('/[^0-9.\s,]/', '', $clean);
+
+        $clean = trim($clean);
+        if ($clean === '') {
+            return $price;
+        }
+
+        // Strip commas from numeric strings: "3,000,000"
+        $stripped = str_replace(',', '', $clean);
+        if (is_numeric($stripped)) {
+            return (int) $stripped;
+        }
+
+        // Last resort: try extracting any numeric value
+        if (preg_match('/[0-9]+(?:\.[0-9]+)?/', $clean, $m)) {
+            $num = (int) (float) $m[0];
+            if ($num < 1000 && $messageHasUnit && $num > 0) {
+                if (preg_match('/\b(million|m|مليون)\b/i', $rawMessage)) {
+                    return $num * 1000000;
+                }
+                if (preg_match('/\b(billion|b|مليار)\b/i', $rawMessage)) {
+                    return $num * 1000000000;
+                }
+                if (preg_match('/\b(thousand|k|آلاف|الف)\b/i', $rawMessage)) {
+                    return $num * 1000;
+                }
+            }
+            return $num;
+        }
+
+        return $price;
+    }
+
+    private function isDeclineResponse(string $message): bool
+    {
+        $normalized = trim(strtolower($message));
+        // Exact short declines
+        if (in_array($normalized, ['no', 'n', 'nah', 'nope', 'no thanks', 'no thank you', 'not now', 'skip', 'none', 'nothing', 'no preferences', 'no preference', 'no prefs'], true)) {
+            return true;
+        }
+        // Pattern: "i don't have/need/want ..."
+        if (preg_match('/\b(no|don\'t|dont|do not|not)\b.*\b(have|need|want|prefer|care|mind)\b/i', $message)) {
+            return true;
+        }
+        return false;
+    }
+
+    private function detectLanguageFromMessage(string $message): string
+    {
+        $message = trim($message);
+        if ($message === '') {
+            return 'en';
+        }
+
+        // Check for Arabic script characters (Unicode range 0600-06FF)
+        if (preg_match('/[\x{0600}-\x{06FF}\x{0750}-\x{077F}\x{08A0}-\x{08FF}\x{FB50}-\x{FDFF}\x{FE70}-\x{FEFF}]/u', $message)) {
+            return 'ar';
+        }
+
+        return 'en';
     }
 
     private function isPaymentSlot(string $slot): bool
