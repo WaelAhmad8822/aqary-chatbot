@@ -108,7 +108,6 @@ class PropertySearchService
         }
 
         $listings = ChatbotListing::query()
-            ->with('features')
             ->whereIn('id', $rankedIds)
             ->get()
             ->keyBy('id');
@@ -140,17 +139,29 @@ class PropertySearchService
         ];
     }
 
-    /**
-     * @return array<int, array<string, mixed>>
-     */
     private function fetchActiveCashListings(SearchData $criteria): array
     {
+        $locations = config('resolution.locations', []);
+        $regionName = null;
+        foreach ($locations as $loc) {
+            if ($loc['canonical_id'] === $criteria->locationId) {
+                $regionName = $loc['canonical_name'];
+                break;
+            }
+        }
+
+        $types = config('resolution.property_types', []);
+        $typeName = null;
+        foreach ($types as $type) {
+            if ($type['canonical_id'] === $criteria->propertyTypeId) {
+                $typeName = $type['canonical_name'];
+                break;
+            }
+        }
+
         return ChatbotListing::query()
-            ->with('features')
-            ->where('status', 'active')
-            ->where('payment_type', 'cash')
-            ->where('location_id', $criteria->locationId)
-            ->where('property_type_id', $criteria->propertyTypeId)
+            ->when($regionName, fn ($q) => $q->where('region', $regionName))
+            ->when($typeName, fn ($q) => $q->where('property_type', $typeName))
             ->where('price', '<=', $criteria->budgetWindowMax)
             ->get()
             ->map(fn (ChatbotListing $listing): array => $this->listingToArray($listing))
@@ -162,24 +173,43 @@ class PropertySearchService
      */
     private function listingToArray(ChatbotListing $listing): array
     {
+        $features = is_array($listing->features) ? $listing->features : json_decode($listing->features ?? '[]', true);
+        $images = is_array($listing->images) ? $listing->images : json_decode($listing->images ?? '[]', true);
+        $cover = !empty($images) ? '/storage/' . $images[0] : null;
+
+        // Try to reverse lookup IDs for the chatbot's internal state
+        $locId = 0;
+        foreach (config('resolution.locations', []) as $loc) {
+            if ($loc['canonical_name'] === $listing->region) {
+                $locId = $loc['canonical_id'];
+            }
+        }
+
+        $typeId = 0;
+        foreach (config('resolution.property_types', []) as $type) {
+            if ($type['canonical_name'] === $listing->property_type) {
+                $typeId = $type['canonical_id'];
+            }
+        }
+
         return [
             'id' => $listing->id,
             'title' => $listing->title,
-            'url' => $listing->url,
+            'url' => 'http://localhost/properties/' . $listing->id,
             'price' => $listing->price,
-            'area' => $listing->area,
+            'area' => $listing->area_sqm,
             'bedrooms' => $listing->bedrooms,
             'bathrooms' => $listing->bathrooms,
-            'furnished_status' => $listing->furnished_status,
-            'location_id' => $listing->location_id,
-            'location_name' => $listing->location_name,
-            'property_type_id' => $listing->property_type_id,
-            'feature_ids' => $listing->features->pluck('id')->values()->all(),
-            'feature_names' => $listing->features->pluck('name')->values()->all(),
-            'cover_image_url' => $listing->cover_image_url,
-            'is_promoted' => (bool) $listing->is_promoted,
-            'status' => $listing->status,
-            'payment_type' => $listing->payment_type,
+            'furnished_status' => $listing->is_furnished ? 'Furnished' : 'Unfurnished',
+            'location_id' => $locId,
+            'location_name' => $listing->region,
+            'property_type_id' => $typeId,
+            'feature_ids' => [], // Unused for now, we just pass names
+            'feature_names' => $features,
+            'cover_image_url' => $cover,
+            'is_promoted' => false,
+            'status' => 'active',
+            'payment_type' => $listing->payment_type ?? 'Cash',
         ];
     }
 }

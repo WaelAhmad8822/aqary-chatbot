@@ -14,17 +14,18 @@ class PropertyDetailService
     {
         $listing = $this->loadListing((int) ($property['id'] ?? 0));
         if ($listing instanceof ChatbotListing) {
+            $features = is_array($listing->features) ? $listing->features : json_decode($listing->features ?? '[]', true);
             $property = array_replace($property, [
                 'title' => $listing->title,
-                'url' => $listing->url,
+                'url' => 'http://localhost/properties/' . $listing->id,
                 'price' => $listing->price,
-                'area' => $listing->area,
+                'area' => $listing->area_sqm,
                 'bedrooms' => $listing->bedrooms,
                 'bathrooms' => $listing->bathrooms,
-                'furnished_status' => $listing->furnished_status,
-                'location' => $listing->location_name,
-                'features' => $listing->features->pluck('name')->values()->all(),
-                'status' => $listing->status,
+                'furnished_status' => $listing->is_furnished ? 'Furnished' : 'Unfurnished',
+                'location' => $listing->region,
+                'features' => $features,
+                'status' => 'active',
             ]);
         }
 
@@ -62,7 +63,7 @@ class PropertyDetailService
         }
 
         try {
-            return ChatbotListing::query()->with('features')->find($id);
+            return ChatbotListing::query()->find($id);
         } catch (Throwable) {
             return null;
         }
